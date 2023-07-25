@@ -1,0 +1,17 @@
+[Global_Params]
+model_name='DRPreter'
+epochs=1
+lr=0.001
+batchsize=5000
+output_dir='Output'
+cuda=0
+cuda_id=0
+download_data=False
+train_subset=None
+config_file=None
+data_split_seed=42
+data_split_id=0
+data_source='ccle_candle'
+#data_version='benchmark-data-pilot1'
+data_version='benchmark-data-imp-2023'
+metric='ic50'

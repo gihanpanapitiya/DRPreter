@@ -17,13 +17,13 @@ import matplotlib.pyplot as plt
 import seaborn as sns
 import openpyxl
 
-
-rpath = './'
-dict_dir = rpath + 'Data/Similarity/dict/'
-cell_id2idx_dict = np.load(dict_dir+'cell_id2idx_dict', allow_pickle=True)
-drug_name2idx_dict = np.load(dict_dir+'drug_name2idx_dict', allow_pickle=True)
-cell_idx2id_dict = np.load(dict_dir+'cell_idx2id_dict', allow_pickle=True)
-drug_idx2name_dict = np.load(dict_dir+'drug_idx2name_dict', allow_pickle=True)
+# gihan - commmenting this part
+# rpath = './'
+# dict_dir = rpath + 'Data/Similarity/dict/'
+# cell_id2idx_dict = np.load(dict_dir+'cell_id2idx_dict', allow_pickle=True)
+# drug_name2idx_dict = np.load(dict_dir+'drug_name2idx_dict', allow_pickle=True)
+# cell_idx2id_dict = np.load(dict_dir+'cell_idx2id_dict', allow_pickle=True)
+# drug_idx2name_dict = np.load(dict_dir+'drug_idx2name_dict', allow_pickle=True)
 
 
 def r4(value):
@@ -102,7 +102,7 @@ def validate(model, loader, args):
     y_pred = torch.cat(y_pred, dim=0)
 
     df = np.array([y_pred.squeeze().cpu().numpy(), y_true.squeeze().cpu().numpy()])
-    df = pd.DataFrame(df.T, columns=['y_pred','y_true'])
+    df = pd.DataFrame(df.T, columns=['pred','true'])
     
     mse = (total_loss / len(loader.dataset)).cpu().detach().numpy()
     rmse = (torch.sqrt(total_loss / len(loader.dataset))).cpu().detach().numpy()
@@ -273,13 +273,19 @@ def inference(model, drug_dict, cell_dict, edge_index, save_name, args):
         
         
 class MyDataset(Dataset):
-    def __init__(self, drug_dict, cell_dict, IC, edge_index):
+    def __init__(self, drug_dict, cell_dict, IC, edge_index, args):
         super(MyDataset, self).__init__()
         self.drug, self.cell = drug_dict, cell_dict
         IC.reset_index(drop=True, inplace=True) # Discard old indexes after train_test_split and rearrange with the new indexes
-        self.drug_name = IC['Drug name']
-        self.Cell_line_name = IC['DepMap_ID']
-        self.value = IC['IC50']
+
+        # self.drug_name = IC['Drug name']
+        # self.Cell_line_name = IC['DepMap_ID']
+        # self.value = IC['IC50']
+
+        self.drug_name = IC[args.drug_id_name] #'Drug name'
+        self.Cell_line_name = IC[args.cell_line_id_name]  # 'DepMap_ID'
+        self.value = IC[args.metric] # 'IC50'
+        
         # self.edge_index = torch.tensor(edge_index, dtype=torch.long)
         self.edge_index = edge_index
 
@@ -293,13 +299,14 @@ class MyDataset(Dataset):
 
 
 class MyDataset_MLP(Dataset):
-    def __init__(self, drug_dict, cell_dict, IC):
+    def __init__(self, drug_dict, cell_dict, IC, args):
         super().__init__()
         self.drug, self.cell = drug_dict, cell_dict
         IC.reset_index(drop=True, inplace=True)
-        self.drug_name = IC['Drug name']
-        self.Cell_line_name = IC['DepMap_ID']
-        self.value = IC['IC50']
+        # self.drug_name = IC['Drug name']
+        # self.Cell_line_name = IC['DepMap_ID']
+        # self.value = IC['IC50']
+
 
     def __len__(self):
         return len(self.value)
@@ -334,15 +341,15 @@ def _collate_MLP_multi(samples):
 def load_data(IC, drug_dict, cell_dict, edge_index, args): # For PPI network
 # def load_data(IC, drug_dict, cell_dict, args, edge_index=None): # For MLP
 
-    train_set, val_test_set = train_test_split(IC, test_size=0.2, random_state=args.seed)
-    val_set, test_set = train_test_split(val_test_set, test_size=0.5, random_state=args.seed)
+    train_set, val_test_set = train_test_split(IC, test_size=0.2, random_state=args.data_split_seed)
+    val_set, test_set = train_test_split(val_test_set, test_size=0.5, random_state=args.data_split_seed)
         
     
     Dataset = MyDataset
     collate_fn = _collate
-    train_dataset = Dataset(drug_dict, cell_dict, train_set, edge_index=edge_index)
-    val_dataset = Dataset(drug_dict, cell_dict, val_set, edge_index=edge_index)
-    test_dataset = Dataset(drug_dict, cell_dict, test_set, edge_index=edge_index)
+    train_dataset = Dataset(drug_dict, cell_dict, train_set, edge_index=edge_index, args=args)
+    val_dataset = Dataset(drug_dict, cell_dict, val_set, edge_index=edge_index, args=args)
+    test_dataset = Dataset(drug_dict, cell_dict, test_set, edge_index=edge_index, args=args)
 
     train_loader = DataLoader(train_dataset, batch_size=args.batch_size, shuffle=True, collate_fn=collate_fn, num_workers=4)
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=4)
@@ -468,66 +475,66 @@ def set_random_seed(seed, deterministic=True):
         torch.backends.cudnn.deterministic = True
         torch.backends.cudnn.benchmark = False
 
+# gihan - commenting
+# class Dataset_Sim(Dataset):
+#     def __init__(self, IC):
+#         super(Dataset_Sim, self).__init__()
+#         IC.reset_index(drop=True, inplace=True)
+#         self.drug_name = IC['Drug name']
+#         self.Cell_line_name = IC['DepMap_ID']
+#         self.value = IC['IC50']
 
-class Dataset_Sim(Dataset):
-    def __init__(self, IC):
-        super(Dataset_Sim, self).__init__()
-        IC.reset_index(drop=True, inplace=True)
-        self.drug_name = IC['Drug name']
-        self.Cell_line_name = IC['DepMap_ID']
-        self.value = IC['IC50']
+#     def __len__(self):
+#         return len(self.value)
 
-    def __len__(self):
-        return len(self.value)
-
-    def __getitem__(self, index):
-        return (drug_name2idx_dict[self.drug_name[index]], cell_id2idx_dict[self.Cell_line_name[index]], self.value[index])
+#     def __getitem__(self, index):
+#         return (drug_name2idx_dict[self.drug_name[index]], cell_id2idx_dict[self.Cell_line_name[index]], self.value[index])
      
+# gihan - commenting
+# def load_sim_data(IC, args):
+#     train_set, val_test_set = train_test_split(IC, test_size=0.2, random_state=args.seed)
+#     val_set, test_set = train_test_split(val_test_set, test_size=0.5, random_state=args.seed)
     
-def load_sim_data(IC, args):
-    train_set, val_test_set = train_test_split(IC, test_size=0.2, random_state=args.seed)
-    val_set, test_set = train_test_split(val_test_set, test_size=0.5, random_state=args.seed)
+#     train_data, val_data, test_data = Dataset_Sim(train_set), Dataset_Sim(val_set), Dataset_Sim(test_set)
     
-    train_data, val_data, test_data = Dataset_Sim(train_set), Dataset_Sim(val_set), Dataset_Sim(test_set)
+#     train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
+#     val_loader = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
+#     test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
     
-    train_loader = DataLoader(train_data, batch_size=args.batch_size, shuffle=True)
-    val_loader = DataLoader(val_data, batch_size=args.batch_size, shuffle=False)
-    test_loader = DataLoader(test_data, batch_size=args.batch_size, shuffle=False)
-    
-    return train_loader, val_loader, test_loader
+#     return train_loader, val_loader, test_loader
 
+# gihan - commenting
+# def load_sim_graph(edge_index, args):  
+#     args.num_feature = 1 # Single-omics
+#     # args.num_feature = 3 # Multi-omics
+    
+#     drug_id2graph_dict = np.load('Data/Drug/drug_feature_graph.npy', allow_pickle=True).item()
+#     cell_name2feature_dict = np.load('Data/Cell/cell_feature_std_2369disjoint.npy', allow_pickle=True).item()
+    
+#     drug_name = pd.read_csv("Data/Drug/drug_smiles.csv").iloc[:, 0]
+    
+#     cell_idx2feature_dict = {u: cell_name2feature_dict[v] for u, v in cell_idx2id_dict.items()}
+#     drug_idx2graph_dict = {u: drug_id2graph_dict[v] for u, v in enumerate(drug_name)}
+    
+#     drug_graph = [dg for _, dg in drug_idx2graph_dict.items()]
+#     cell_graph = [cg for _, cg in cell_idx2feature_dict.items()]
+    
+#     for cg in cell_graph:
+#         cg.edge_index = edge_index
 
-def load_sim_graph(edge_index, args):  
-    args.num_feature = 1 # Single-omics
-    # args.num_feature = 3 # Multi-omics
-    
-    drug_id2graph_dict = np.load('Data/Drug/drug_feature_graph.npy', allow_pickle=True).item()
-    cell_name2feature_dict = np.load('Data/Cell/cell_feature_std_2369disjoint.npy', allow_pickle=True).item()
-    
-    drug_name = pd.read_csv("Data/Drug/drug_smiles.csv").iloc[:, 0]
-    
-    cell_idx2feature_dict = {u: cell_name2feature_dict[v] for u, v in cell_idx2id_dict.items()}
-    drug_idx2graph_dict = {u: drug_id2graph_dict[v] for u, v in enumerate(drug_name)}
-    
-    drug_graph = [dg for _, dg in drug_idx2graph_dict.items()]
-    cell_graph = [cg for _, cg in cell_idx2feature_dict.items()]
-    
-    for cg in cell_graph:
-        cg.edge_index = edge_index
+#     model = DRPreter(args).to(args.device)
+#     model.load_state_dict(torch.load(f'weights/weight_seed{args.seed}.pth', map_location=args.device)['model_state_dict'])
 
-    model = DRPreter(args).to(args.device)
-    model.load_state_dict(torch.load(f'weights/weight_seed{args.seed}.pth', map_location=args.device)['model_state_dict'])
-
-    drug_nodes = model.DrugEncoder(Batch.from_data_list(drug_graph).to(args.device)).detach() # detach(): One of the ways to copy an existing tensor - create a tensor that does not allow gradient propagation from an existing tensor
-    cell_nodes = model.CellEncoder(Batch.from_data_list(cell_graph).to(args.device)).detach() # torch.no_grad() and detach() can be seen as almost the same.
+#     drug_nodes = model.DrugEncoder(Batch.from_data_list(drug_graph).to(args.device)).detach() # detach(): One of the ways to copy an existing tensor - create a tensor that does not allow gradient propagation from an existing tensor
+#     cell_nodes = model.CellEncoder(Batch.from_data_list(cell_graph).to(args.device)).detach() # torch.no_grad() and detach() can be seen as almost the same.
  
-    with open(f'./Data/Similarity/edge/drug_cell_edges_5_knn', 'rb') as f:
-        drug_edges, cell_edges = pickle.load(f)
+#     with open(f'./Data/Similarity/edge/drug_cell_edges_5_knn', 'rb') as f:
+#         drug_edges, cell_edges = pickle.load(f)
         
-    drug_edges = torch.tensor(drug_edges, dtype=torch.long).t()
-    cell_edges = torch.tensor(cell_edges, dtype=torch.long).t()
+#     drug_edges = torch.tensor(drug_edges, dtype=torch.long).t()
+#     cell_edges = torch.tensor(cell_edges, dtype=torch.long).t()
 
-    return drug_nodes, cell_nodes, drug_edges, cell_edges
+#     return drug_nodes, cell_nodes, drug_edges, cell_edges
 
 
 def boxplot():

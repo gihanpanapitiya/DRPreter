@@ -12,7 +12,7 @@ from sklearn.impute import SimpleImputer
 from scipy import sparse
 import pickle
 from tqdm import trange, tqdm
-
+from data_utils import DataProcessor
 
 def ensp_to_hugo_map():
     with open(rpath+'Data/CELL/9606.protein.info.v11.5.txt') as csv_file:
@@ -23,12 +23,21 @@ def ensp_to_hugo_map():
     return ensp_map
 
 
-def save_cell_graph(gene_path, save_path, type):
+def save_cell_graph(gene_path, save_path, type, args):
     if os.path.exists(os.path.join(save_path, 'cell_feature_std_{}.npy'.format(type))):
         print('already exists!')
     else:
         # os.makedirs(save_path)
         exp = pd.read_csv(os.path.join(gene_path, 'CCLE_2369_EXP.csv'), index_col=0)
+
+        
+        pw = DataProcessor(args.data_version)
+        exp_imp = pw.load_gene_expression_data(data_dir=args.data_path)
+        common_genes = list(set(exp_imp.columns).intersection(exp.columns))
+        exp = exp_imp.loc[:, common_genes]
+
+        # exp = exp.iloc[:10,:]
+
         index = exp.index
         columns = exp.columns
 
@@ -83,6 +92,10 @@ def save_cell_graph(gene_path, save_path, type):
         print(cell_dict)
         np.save(os.path.join(save_path, 'cell_feature_std_{}.npy').format(type), cell_dict)
         print("finish saving cell data!")
+
+
+        print(os.path.join(save_path, 'cell_feature_std_{}.npy').format(type))
+        print(gene_list)
         return gene_list
 
 
@@ -111,18 +124,27 @@ def get_STRING_edges(gene_path, ppi_threshold, type, gene_list):
         # Conserve edge_index
         print(len(edge_index[0]))
         np.save(
-            os.path.join(rpath + 'Data/Cell/', 'edge_index_{}_{}.npy'.format(ppi_threshold, type)),
+            os.path.join(rpath + '/Cell/', 'edge_index_{}_{}.npy'.format(ppi_threshold, type)),
             edge_index)
     else:
         edge_index = np.load(save_path)
 
     return edge_index
 
-
+import argparse
 if __name__ == '__main__':
-    rpath = './'
-    gene_path = rpath+'Data/Cell'
-    save_path = rpath+'Data/Cell'
+
+    parser = argparse.ArgumentParser(prog='ProgramName', description='What the program does')
+    parser.add_argument('--data_version',  default='benchmark-data-imp-2023', help='')
+    parser.add_argument('--data_path',  default='', help='')
+    # parser.add_argument('--string_edge', type=float, default=990, help='Threshold for edges of cell line graph')
+    args = parser.parse_args()
+
+    rpath = args.data_path
+
+    # copy Origina Cell folder to Data folder
+    gene_path = rpath+'/Cell'
+    save_path = rpath+'/Cell'
     with open(gene_path+'/34pathway_score990.pkl', 'rb') as file:
         kegg = pickle.load(file)
 
@@ -130,5 +152,5 @@ if __name__ == '__main__':
     type = 'disjoint'  # type = joint, disjoint, ...
     
 
-    genelist = save_cell_graph(gene_path, save_path, type=type)
+    genelist = save_cell_graph(gene_path, save_path, type=type, args=args)
     get_STRING_edges(gene_path, ppi_threshold='PPI_990', type=type, gene_list=genelist)

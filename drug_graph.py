@@ -5,7 +5,8 @@ import torch
 import torch_geometric
 from torch_geometric.data import Data
 from dgllife.utils import *
-
+from data_utils import DataProcessor
+import os
 
 def atom_to_feature_vector(atom):
     """
@@ -98,17 +99,23 @@ def smiles2graph(mol):
     return graph
 
 
-def save_drug_graph():
-    smiles = pd.read_csv('Data/Drug/drug_smiles.csv')
+def save_drug_graph(args):
+    dp = DataProcessor(args.data_version)
+    smiles = dp.load_smiles_data(data_dir=args.data_path)
+    # smiles = pd.read_csv('Data/Drug/drug_smiles.csv')
     drug_dict = {}
     for i in range(len(smiles)):
-        drug_dict[smiles.iloc[i, 0]] = smiles2graph(smiles.iloc[i, 2])
-    np.save('Data/Drug/drug_feature_graph.npy', drug_dict)
+        drug_dict[smiles.iloc[i, 0]] = smiles2graph(smiles.iloc[i, 1])
+    np.save(os.path.join(args.data_path, 'Drug/drug_feature_graph.npy'), drug_dict)
     return drug_dict
 
-
+import argparse
 if __name__ == '__main__':
+    parser = argparse.ArgumentParser(prog='ProgramName', description='What the program does')
+    parser.add_argument('--data_version',  default='benchmark-data-imp-2023', help='')
+    parser.add_argument('--data_path',  default='', help='')
+    args = parser.parse_args()
 #     graph = smiles2graph('O1C=C[C@H]([C@H]1O2)c3c2cc(OC)c4c3OC(=O)C5=C4CCC(=O)5')
 #     print(graph.x.shape)
 #     print(graph.edge_attr.shape)
-    save_drug_graph()
+    save_drug_graph(args)

@@ -10,49 +10,71 @@ from utils import *
 from Model.DRPreter import DRPreter
 from Model.Similarity import Similarity
 from torch_scatter import scatter_add
+from data_utils import DataProcessor, add_smiles
 
 
-def arg_parse():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--seed', type=int, default=42, help='seed')
-    parser.add_argument('--device', type=int, default=0, help='device')
-    parser.add_argument('--batch_size', type=int, default=128, help='batch size (default: 128)')
-    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
-    parser.add_argument('--layer', type=int, default=3, help='Number of cell layers')
-    parser.add_argument('--hidden_dim', type=int, default=8, help='hidden dim for cell')
-    parser.add_argument('--layer_drug', type=int, default=3, help='Number of drug layers')
-    parser.add_argument('--dim_drug', type=int, default=128, help='hidden dim for drug (default: 128)')
-    parser.add_argument('--dim_drug_cell', type=int, default=256, help='hidden dim for drug and cell (default: 256)')
-    parser.add_argument('--dropout_ratio', type=float, default=0.1, help='Dropout ratio (default: 0.1)')
-    parser.add_argument('--epochs', type=int, default=300, help='Maximum number of epochs (default: 300)')
-    parser.add_argument('--patience', type=int, default=100, help='patience for early stopping (default: 10)')
-    parser.add_argument('--mode', type=str, default='train', help='train, test')
-    parser.add_argument('--edge', type=str, default='STRING', help='STRING, BIOGRID') # BIOGRID: removed
-    parser.add_argument('--string_edge', type=float, default=0.99, help='Threshold for edges of cell line graph')
-    parser.add_argument('--dataset', type=str, default='2369disjoint', help='2369joint, 2369disjoint, COSMIC')
-    parser.add_argument('--trans', type=bool, default=True, help='Use Transformer or not')
-    parser.add_argument('--sim', type=bool, default=False, help='Construct homogeneous similarity networks or not')
-    return parser.parse_args()
 
 
-def main():
-    args = arg_parse()
-    args.device = 'cuda:{}'.format(args.device)
+
+def get_drug_response_data(args):
+
+    proc = DataProcessor(args.data_version)
+    # dw.download_candle_data(data_type=args.data_type, split_id=args.data_split_id, data_dest=args.data_path)
+
+
+
+    train = proc.load_drug_response_data(data_path=args.data_path, 
+                                        data_type=args.data_type, split_id=args.data_split_id, split_type='train', response_type=args.metric)
+
+    val = proc.load_drug_response_data(data_path=args.data_path, 
+                                        data_type=args.data_type, split_id=args.data_split_id, split_type='val', response_type=args.metric)
+
+    test = proc.load_drug_response_data(data_path=args.data_path, 
+                                        data_type=args.data_type, split_id=args.data_split_id, split_type='test', response_type=args.metric)
+
+
+    smiles_df = proc.load_smiles_data(data_dir=args.data_path)
+
+    # help(add_smiles)
+
+    train = add_smiles(smiles_df, train, args.metric)
+    val = add_smiles(smiles_df, val, args.metric)
+    test = add_smiles(smiles_df, test, args.metric)
+
+
+    df_all = pd.concat([train, val, test], axis=0)
+    df_all.reset_index(drop=True, inplace=True)
+
+    return df_all, test
+
+
+def main(args):
+    # args = arg_parse()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    args.__setattr__('device', device)
+
+    # args.device = 'cuda:{}'.format(args.device)
     rpath = './'
-    result_path = rpath + 'Result/'
+    result_path = args.output_dir
     
     print(f'seed: {args.seed}')
     set_random_seed(args.seed)
     
     edge_type = 'PPI_'+str(args.string_edge) if args.edge=='STRING' else args.edge
-    edge_index = np.load(rpath+f'Data/Cell/edge_index_{edge_type}_{args.dataset}.npy')
+    edge_index = np.load(args.data_path+f'/Cell/edge_index_{edge_type}_{args.dataset}.npy')
     
-    data = pd.read_csv(rpath+'Data/sorted_IC50_82833_580_170.csv')
-    
-    drug_dict = np.load(rpath+'Data/Drug/drug_feature_graph.npy', allow_pickle=True).item() # pyg format of drug graph
-    cell_dict = np.load(rpath+f'Data/Cell/cell_feature_std_{args.dataset}.npy', allow_pickle=True).item() # pyg data format of cell graph
+    # data = pd.read_csv(args.data_path+'drug_response_data.csv')
+    data, test_df = get_drug_response_data(args)
 
-    example = cell_dict['ACH-000001']
+
+
+    
+    drug_dict = np.load(args.data_path+'/Drug/drug_feature_graph.npy', allow_pickle=True).item() # pyg format of drug graph
+    cell_dict = np.load(args.data_path+f'/Cell/cell_feature_std_{args.dataset}.npy', allow_pickle=True).item() # pyg data format of cell graph
+
+    # example = cell_dict['ACH-000001']
+    example = cell_dict['CC_50']
+
     args.num_feature = example.x.shape[1] # 1
     args.num_genes = example.x.shape[0] # 4646
     # print(f'num_feature: {args.num_feature}, num_genes: {args.num_genes}')
@@ -116,8 +138,8 @@ def main():
             save_results(results, results_path)
             
             print(f"Validation mse: {mse}")
-            test_MSE, test_RMSE, test_MAE, test_PCC, test_SCC, df = validate(model, test_loader, args)
-            print(f"Test mse: {test_MSE}")
+            # test_MSE, test_RMSE, test_MAE, test_PCC, test_SCC, df = validate(model, test_loader, args)
+            # print(f"Test mse: {test_MSE}")
             early_stop = stopper.step(mse, model)
             if early_stop:
                 break
@@ -130,6 +152,15 @@ def main():
         train_MSE, train_RMSE, train_MAE, train_PCC, train_SCC, _ = validate(model, train_loader, args)
         val_MSE, val_RMSE, val_MAE, val_PCC, val_SCC, _ = validate(model, val_loader, args)
         test_MSE, test_RMSE, test_MAE, test_PCC, test_SCC, df = validate(model, test_loader, args)
+
+        test_df = pd.concat([test_df, df], axis=1)
+
+        output_path = os.path.join(args.output_dir, str(args.run_id) )
+        os.makedirs( output_path )
+
+        test_df.to_csv(os.path.join(output_path, 'test_predictions.csv'), index=False) 
+
+
 
         print('-------- DRPreter -------')
         print(f'sim: {args.sim}')
@@ -243,4 +274,40 @@ def main():
         
         
 if __name__ == "__main__":
-    main()
+
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--seed', type=int, default=42, help='seed')
+    parser.add_argument('--device', type=int, default=0, help='device')
+    parser.add_argument('--batch_size', type=int, default=128, help='batch size (default: 128)')
+    parser.add_argument('--lr', type=float, default=0.0001, help='learning rate (default: 0.0001)')
+    parser.add_argument('--layer', type=int, default=3, help='Number of cell layers')
+    parser.add_argument('--hidden_dim', type=int, default=8, help='hidden dim for cell')
+    parser.add_argument('--layer_drug', type=int, default=3, help='Number of drug layers')
+    parser.add_argument('--dim_drug', type=int, default=128, help='hidden dim for drug (default: 128)')
+    parser.add_argument('--dim_drug_cell', type=int, default=256, help='hidden dim for drug and cell (default: 256)')
+    parser.add_argument('--dropout_ratio', type=float, default=0.1, help='Dropout ratio (default: 0.1)')
+    parser.add_argument('--epochs', type=int, default=1, help='Maximum number of epochs (default: 300)')
+    parser.add_argument('--patience', type=int, default=100, help='patience for early stopping (default: 10)')
+    parser.add_argument('--mode', type=str, default='train', help='train, test')
+    parser.add_argument('--edge', type=str, default='STRING', help='STRING, BIOGRID') # BIOGRID: removed
+    # parser.add_argument('--string_edge', type=float, default=0.99, help='Threshold for edges of cell line graph')
+    parser.add_argument('--string_edge', type=float, default=990, help='Threshold for edges of cell line graph')
+    parser.add_argument('--dataset', type=str, default='disjoint', help='2369joint, 2369disjoint, COSMIC')
+    # parser.add_argument('--dataset', type=str, default='2369disjoint', help='2369joint, 2369disjoint, COSMIC')
+    parser.add_argument('--trans', type=bool, default=True, help='Use Transformer or not')
+    parser.add_argument('--sim', type=bool, default=False, help='Construct homogeneous similarity networks or not')
+    parser.add_argument('--data_path', type=str, default='', help='data path')
+    parser.add_argument('--data_version', type=str, default='benchmark-data-imp-2023', help='data path')
+    parser.add_argument('--metric', type=str, default='ic50', help='ic50')
+    parser.add_argument('--data_split_seed', type=int, default=42, help='')
+    parser.add_argument('--drug_id_name', type=str, default='improve_chem_id', help='')
+    parser.add_argument('--cell_line_id_name', type=str, default='improve_sample_id', help='')
+    parser.add_argument('--output_dir', type=str, default='', help='')
+    parser.add_argument('--run_id', type=int, default=0, help='')
+    parser.add_argument('--data_type', type=str, default='CCLE', help='')
+    parser.add_argument('--data_split_id', type=int, default=0, help='')
+
+    
+    args = parser.parse_args()
+
+    main(args)
