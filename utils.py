@@ -340,9 +340,9 @@ def _collate_MLP_multi(samples):
 
 def load_data(IC, drug_dict, cell_dict, edge_index, args): # For PPI network
 # def load_data(IC, drug_dict, cell_dict, args, edge_index=None): # For MLP
-
-    train_set, val_test_set = train_test_split(IC, test_size=0.2, random_state=args.data_split_seed)
-    val_set, test_set = train_test_split(val_test_set, test_size=0.5, random_state=args.data_split_seed)
+    data_split_seed = int(args.data_split_seed)
+    train_set, val_test_set = train_test_split(IC, test_size=0.2, random_state=data_split_seed)
+    val_set, test_set = train_test_split(val_test_set, test_size=0.5, random_state=data_split_seed)
         
     
     Dataset = MyDataset
@@ -355,7 +355,9 @@ def load_data(IC, drug_dict, cell_dict, edge_index, args): # For PPI network
     val_loader = DataLoader(val_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=4)
     test_loader = DataLoader(test_dataset, batch_size=args.batch_size, shuffle=False, collate_fn=collate_fn, num_workers=4)
 
-    return train_loader, val_loader, test_loader
+
+    test_set.reset_index(drop=True, inplace=True)
+    return train_loader, val_loader, test_loader, test_set
 
 
 class EarlyStopping():

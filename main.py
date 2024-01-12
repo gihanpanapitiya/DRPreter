@@ -45,7 +45,7 @@ def get_drug_response_data(args):
     df_all = pd.concat([train, val, test], axis=0)
     df_all.reset_index(drop=True, inplace=True)
 
-    return df_all, test
+    return df_all
 
 
 def main(args):
@@ -54,9 +54,15 @@ def main(args):
     args.__setattr__('device', device)
 
     # args.device = 'cuda:{}'.format(args.device)
-    rpath = './'
+  
     result_path = args.output_dir
-    
+    output_path = os.path.join(args.output_dir, str(args.run_id) )
+    rpath = output_path + '/'
+    os.makedirs( output_path )
+    if not os.path.exists(rpath+'weights'):
+        os.mkdir(rpath+'weights')
+
+ 
     print(f'seed: {args.seed}')
     set_random_seed(args.seed)
     
@@ -64,7 +70,7 @@ def main(args):
     edge_index = np.load(args.data_path+f'/Cell/edge_index_{edge_type}_{args.dataset}.npy')
     
     # data = pd.read_csv(args.data_path+'drug_response_data.csv')
-    data, test_df = get_drug_response_data(args)
+    data = get_drug_response_data(args)
 
 
 
@@ -95,7 +101,7 @@ def main(args):
         
     # ---- [1] Pathway + Transformer ----
     if args.sim == False:
-        train_loader, val_loader, test_loader = load_data(data, drug_dict, cell_dict, torch.tensor(edge_index, dtype=torch.long), args)
+        train_loader, val_loader, test_loader, test_df = load_data(data, drug_dict, cell_dict, torch.tensor(edge_index, dtype=torch.long), args)
         print('total: {}, train: {}, val: {}, test: {}'.format(len(data), len(train_loader.dataset), len(val_loader.dataset), len(test_loader.dataset)))
         
         model = DRPreter(args).to(args.device)
@@ -126,7 +132,7 @@ def main(args):
         criterion = nn.MSELoss()
         opt = torch.optim.Adam(model.parameters(), lr=args.lr)
 
-        state_dict_name = f'{rpath}weights/weight_sim_seed{args.seed}.pth' if args.sim==True else f'{rpath}weights/weight_seed{args.seed}.pth'
+        state_dict_name = f'{rpath}weights/weight_sim_seed{args.data_split_seed}.pth' if args.sim==True else f'{rpath}weights/weight_seed{args.data_split_seed}.pth'
         stopper = EarlyStopping(mode='lower', patience=args.patience, filename=state_dict_name)
 
         for epoch in range(1, args.epochs + 1):
@@ -155,8 +161,8 @@ def main(args):
 
         test_df = pd.concat([test_df, df], axis=1)
 
-        output_path = os.path.join(args.output_dir, str(args.run_id) )
-        os.makedirs( output_path )
+
+    
 
         test_df.to_csv(os.path.join(output_path, 'test_predictions.csv'), index=False) 
 
@@ -286,7 +292,7 @@ if __name__ == "__main__":
     parser.add_argument('--dim_drug', type=int, default=128, help='hidden dim for drug (default: 128)')
     parser.add_argument('--dim_drug_cell', type=int, default=256, help='hidden dim for drug and cell (default: 256)')
     parser.add_argument('--dropout_ratio', type=float, default=0.1, help='Dropout ratio (default: 0.1)')
-    parser.add_argument('--epochs', type=int, default=1, help='Maximum number of epochs (default: 300)')
+    parser.add_argument('--epochs', type=int, default=200, help='Maximum number of epochs (default: 300)')
     parser.add_argument('--patience', type=int, default=100, help='patience for early stopping (default: 10)')
     parser.add_argument('--mode', type=str, default='train', help='train, test')
     parser.add_argument('--edge', type=str, default='STRING', help='STRING, BIOGRID') # BIOGRID: removed
